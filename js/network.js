@@ -14,6 +14,8 @@ var descStore = null;			//holds the triple data bank created by te rdfquery plug
 var descObject = null;			//holds the javascript seralized object of the triple store for the description
 var nameObject = null;			//holds the foaf names of the people
 var largestNodes = [];			//holds a list of the N largest nodes/people (most connections) in order to place/lock them properly on render
+var largestNodesGender = [];	//holds a second list (based on interviewed people) of the N largest nodes/people (most connections) in order to place/lock them properly on render for gender view 
+var interviewedPeople = [];		//holds list of interviewees based on "sources" in triples								
 var hidePopupTimer = null;		//holds the timer to close the popup
 var showPopupTimer = null;		
 var currentNode = null;			//the current node we are highligting
@@ -61,6 +63,7 @@ var networkMinEdges = 2;		//the min number of edges to have a node be rendered
 var cssSafe = new RegExp(/%|\(|\)|\.|\,|'|"/g);	//the regex to remove non css viable chars
 
 var youTubeObject = '<object style="height=130px; width=200px; position: absolute; bottom: 0px;"> <param name="movie" value="https://www.youtube.com/v/<id>?version=3&feature=player_embedded&controls=1&enablejsapi=1&modestbranding=1&rel=0&showinfo=1&autoplay=1"><param name="allowFullScreen" value="true"><param name="wmode" value="transparent"><param name="allowScriptAccess" value="always"><embed src="https://www.youtube.com/v/<id>?version=3&feature=player_embedded&controls=1&enablejsapi=1&modestbranding=1&rel=0&showinfo=1&autoplay=1" type="application/x-shockwave-flash" allowfullscreen="true" allowScriptAccess="always" width="200" height="130" wmode="transparent"></object>';			
+var youTubeObject = '<iframe width="200" height="130" src="https://www.youtube.com/embed/<id>?autoplay=1" frameborder="0" allowfullscreen></iframe>'
 var zoomWidgetObj = null;			//the zoom widget draghandeler object
 var zoomWidgetObjDoZoom = true;
 
@@ -103,7 +106,8 @@ jQuery(document).ready(function($) {
 
 	jQuery("#menu_fixed").mouseenter(function(){$(this).css("opacity",1);}).mouseleave(function(){$(this).css("opacity",0.15);}).click(function(){changeVisMode("wave");});
 	jQuery("#menu_similar").mouseenter(function(){$(this).css("opacity",1);}).mouseleave(function(){$(this).css("opacity",0.15);}).click(function(){changeVisMode("clique");});
-	jQuery("#menu_free").mouseenter(function(){$(this).css("opacity",1);}).mouseleave(function(){$(this).css("opacity",0.15);}).click(function(){changeVisMode("free");});		
+	jQuery("#menu_gender").mouseenter(function(){$(this).css("opacity",1);}).mouseleave(function(){$(this).css("opacity",0.15);}).click(function(){changeVisMode("gender");});
+// 	jQuery("#menu_free").mouseenter(function(){$(this).css("opacity",1);}).mouseleave(function(){$(this).css("opacity",0.15);}).click(function(){changeVisMode("free");});		
 	jQuery("#menu_dynamic").mouseenter(function(){$(this).css("opacity",1);}).mouseleave(function(){$(this).css("opacity",0.15);}).click(function(){changeVisMode("dynamic");});		
 	
 	
@@ -139,6 +143,11 @@ jQuery(document).ready(function($) {
 		$.get('data/abstracts.txt', function(data) {
 			buildDescriptionStore(data);
 		});
+
+		// grab the gender data
+		$.get('data/genders.txt', function(data) {
+			buildGenderStore(data);
+		});			
 		
 	 
 		$.get('/api/relationships/all/nt', function(data) {
@@ -146,7 +155,8 @@ jQuery(document).ready(function($) {
 		   
 		   buildTripleStore(data);	
 			
-		   dataAnalysis();	
+		   dataAnalysis();
+		   dataAnalysisGender();	// need to make special separate calculation at beginning for gender pinning
 
 
 		   //we need the description data ready because it has the names in it
@@ -251,9 +261,6 @@ jQuery(document).ready(function($) {
 
 })
 
-
-
-
 function parseStateChangeVis(){
 
 
@@ -276,6 +283,23 @@ function parseStateChangeVis(){
 
 		changeVisMode("person");
 
+	} else if (history.hash.search(/\?person_gender=/) > -1){
+
+		var person = history.hash.split('?person_gender=')[1];
+		//trim off the suid that the library attaches if we need to. hacky
+		if (person.search(/_suid=/)>-1){
+			person = person.split('&_suid=')[0]
+		}
+
+			//lookup that nice name for the uri
+		usePerson = jQuery.map(idLookup, function(obj,index) {
+		    if(obj === person)
+		         return index;
+	})[0];
+
+
+		changeVisMode("person_gender");
+
 	}else if (history.hash.search(/\?mode=/) > -1){
 
 		var mode = history.hash.split('?mode=')[1];
@@ -294,9 +318,76 @@ function parseStateChangeVis(){
 
 }
 
+function changeVisMode(changeTo){
+
+	if (rendering)
+		return false;
+
+	rendering = true;
+
+	if (changeTo == "person"){
+		History.pushState({state:idLookup[usePerson]}, "Person Mode", "?person=" + idLookup[usePerson]);
+		
+	}else if (changeTo == "person_gender"){			//change the query string
+		History.pushState({state:idLookup[usePerson]}, "Person Gender Mode", "?person_gender=" + idLookup[usePerson]);
+		
+	}else{
+		History.pushState({state:changeTo}, changeTo +" Mode", "?mode=" + changeTo);
+
+	}
+
+	//set the gephi download link
+	if ((changeTo == 'person') || (changeTo == 'person_gender')){
+	
+		$("#gephi").show();
+		$("#gephi").attr("href", 'http://linkedjazz.org/api/relationships/ego/%3C' + encodeURIComponent(usePerson) + '%3E/gexf');
+	
+	}else if (changeTo != 'dynamic'){
+		
+		$("#gephi").show();
+		$("#gephi").attr("href", 'http://linkedjazz.org/api/relationships/all/gexf');
+
+	}else{
+		$("#gephi").hide();
+	}
 
 
- 
+	visMode = changeTo;
+
+	$("#network").fadeOut(function(){
+		
+		$("#network").css("visibility","hidden");
+		
+		//if the popup has been shown make sure its hidden before the next view
+		if(currentNode!=null){hidePopup();}
+
+
+		
+		showSpinner("Rendering<br>Network");		
+		initalizeNetwork();
+
+		//we need to rest the zoom/pan
+   		zoom.translate([0,0]).scale(1);
+		vis.attr("transform", "translate(" + [0,0] + ")"  + " scale(" + 1 + ")");  		
+		
+		zoomWidgetObjDoZoom = false;	
+		zoomWidgetObj.setValue(0,0.255555555); 		
+		
+		filter();
+
+		rendering = false;
+		
+		
+		
+		
+	});
+	
+	
+		
+	
+	
+}
+
 function initalizeNetwork(){
 	
 	$("#dynamicListHolder, #dynamicSearchHolder, #dynamicClear").css("display","none")
@@ -315,6 +406,27 @@ function initalizeNetwork(){
 		networkNodeDrag = false;		
 		
  	}
+ 
+ 
+ 	if (visMode=="gender"){
+		networkGravity =  1.2; // higher number pulls more inward
+		netwokrLinkLength = 10; 		
+		networkLargeNodeLimit = interviewedPeople.length;  // is this calculated before using?
+		netwokrCharge = -15;	// higher negative number has stronger repulsion
+		networkMinEdges = 1;	
+		networkStopTick = true;
+		networkNodeDrag = false;		
+		
+	}
+	
+	if (visMode=="person_gender"){
+		networkGravity =  0.1;
+		netwokrLinkLength = 55;
+		networkLargeNodeLimit = interviewedPeople.length; 
+		netwokrCharge = -2600;	 
+		networkStopTick = false;
+		networkNodeDrag = true;				
+	}				
 	
 	if (visMode=="free"){
 		networkGravity =  0.1;
@@ -447,440 +559,52 @@ function initalizeNetwork(){
 	
 }
 
-//process the triple data through the RDF jquery plugin to create an object
-function buildTripleStore(data){
+function windowResize(){
+	 
+	visWidth = $(window).width();
+	visHeight = $(window).height();
 	
-		tripleStore = $.rdf.databank([],
-		  { base: 'http://www.dbpedia.org/',
-			namespaces: { 
-			  dc: 'http://purl.org/dc/elements/1.1/', 
-			  foaf: 'http://xmlns.com/foaf/0.1/', 
-			  lj: 'http://www.linkedjazz.org/lj/' } });	  
-		
-		
-		//I'm only intrested in the knowsOf right now before we work more on verifying the 52nd street stuff, so just make all relationships knowsof
-		var alreadyKnows = [];
+ 	
+	$("#network").css('width', visWidth + 'px');
+	$("#network").css('height',visHeight + 'px');
+	$("#dynamicListHolder").css('height',visHeight - 110 + 'px');
+	
+	
+	
 
-
-		/***********
-		* 	The file we are loading is expected to be a triple store in the format '<object> <predicate> <object> .\n'
-		*   Note the space after the final object and the '.' and the \n only
-		************/	  
-		var triples = data.split("\n");
-		for (x in triples){			
-			if (triples[x].length > 0){		
-				try{		
-
-					//I'm only intrested in the knowsOf right now before we work more on verifying the 52nd street stuff, so just make all relationships knowsof
-					var hash = triples[x].split("> <")[0] + triples[x].split("> <")[2];
-
-
-
-					//only add it once
-					if (alreadyKnows.indexOf(hash) === -1){
-
-						var newKnowsOf = triples[x].split("> <")[0] + "> <http://purl.org/vocab/relationship/knowsOf> <" + triples[x].split("> <")[2];
-						alreadyKnows.push(hash);
-
-						//console.log(newKnowsOf);
-						tripleStore.add(newKnowsOf);
-						//tripleStore.add(triples[x]);
-				
-
-
-					}
-					
-
-
-
-				}
-
-
-				catch(err){
- 					//if it cannot load one of the triples it is not a total failure, keep going
-					console.log('There was an error processing the data file:');
-					console.log(err);										
-				}
-			}
-		}
-
- 
-		tripleObject = tripleStore.dump()
-
-
-		console.log(alreadyKnows.length);
 	
 	
 }
 
-//process the triple data through the RDF jquery plugin to create an object
-function buildDescriptionStore(data){
+function showSpinner(text){
 	
-		var descStore = $.rdf.databank([],
-		  { base: 'http://www.dbpedia.org/',
-			namespaces: { 
-			  dc: 'http://purl.org/dc/elements/1.1/', 
-			  wc: 'http://www.w3.org/2000/01/rdf-schema', 
-			  lj: 'http://www.linkedjazz.org/lj/' } });	  
+	$("#spinner").css("left",($("#network").width()/2 ) - 65 + "px");
+	$("#spinner").css("top", ($("#network").height()/2 ) - 65 + "px");
+	$("#spinner").css("display","block");
+	$("#spinner span").html(text);
 		
-		
-		/***********
-		* 	The file we are loading is expected to be a triple dump in the format '<object> <predicate> <object> .\n'
-		*   Note the space after the final object and the '.' and the \n only
-		************/	  
-		var triples = data.split("\n");
-		for (x in triples){			
-			if (triples[x].length > 0){		
-				try{		
-					descStore.add(triples[x]);
-				}
-				catch(err){
- 					//if it cannot load one of the triples it is not a total failure, keep going
-					console.log('There was an error processing the data file:');
-					console.log(err);										
-				}
-			}
-		}
-
- 
-		descObject = descStore.dump()	
-		 
-	
 	
 }
 
-//process the triple data through the RDF jquery plugin to create an object
-function buildNameStore(data){
-	
-		var nameStore = $.rdf.databank([],
-		  { base: 'http://www.dbpedia.org/',
-			namespaces: { 
-			  dc: 'http://purl.org/dc/elements/1.1/', 
-			  wc: 'http://www.w3.org/2000/01/rdf-schema', 
-			  lj: 'http://www.linkedjazz.org/lj/' } });	  
-		
-		
-		/***********
-		* 	The file we are loading is expected to be a triple dump in the format '<object> <predicate> <object> .\n'
-		*   Note the space after the final object and the '.' and the \n only
-		************/	  
-		var triples = data.split("\n");
-		for (x in triples){			
-			if (triples[x].length > 0){		
-				try{		
-					nameStore.add(triples[x]);
-				}
-				catch(err){
- 					//if it cannot load one of the triples it is not a total failure, keep going
-					console.log('There was an error processing the data file:');
-					console.log(err);										
-				}
-			}
-		}
 
- 
-		nameObject = nameStore.dump();	
-		 
+//zoom/pan function called by mouse event
+function redraw(useScale) {
+
+	//store the last event data
+	trans=d3.event.translate;
+	scale=d3.event.scale;  
+
+
+	//transform the vis
+   vis.attr("transform",
+      "translate(" + trans + ")"
+      + " scale(" + scale + ")");   
 	
-	
+	//we need to update the zoom slider, set the boolean to false so the slider change does not trigger a zoom change in the vis (from the slider callback function)  
+	zoomWidgetObjDoZoom = false;	
+	zoomWidgetObj.setValue(0,(scale/4)); 
+	 
 }
-
-function dataAnalysis(){
-
-	//we need to know some stats about the people before we start to render the network
-	//find out the largest nodes
-	var totalConnections = 0;
-	for (x in tripleObject){	//each x here is a person
-		
-		var size = 0;
-		for (y in tripleObject[x]){		//this level is the types of relations, mentions, knows, etc. each y here is a realtion bundle
-			size = size + tripleObject[x][y].length;
-		}		
-		
-		var sizeObj = {}; 
-		sizeObj.node = x;			
-		sizeObj.size = size;		
-		sizeObj.random = Math.floor((Math.random()*100)+1);			
-		largestNodes.push(sizeObj);
-		totalConnections = totalConnections + size;
-	}
-	
-	
-	 
-	//now an array of objects of with the .node property being the index to the tripleObect
-	largestNodes.sort(function(a,b) {
-		return b.size - a.size;
-	});	
-	
-	
-	//find out the range of number of connections to color our edges
-	edgesAvg = Math.floor(totalConnections/largestNodes.length);
-	edgesInterval = (largestNodes[0].size - edgesAvg) / 3;
-	console.log(edgesInterval);
-	
-	
-	var flipFlop = 0;
-	//for (largeNode in largestNodes){
-	//	largestNodes[largeNode].flipFlop =  (flipFlop % 2 == 1) ?  (flipFlop*-1) : (flipFlop);
-	for (var i = largestNodes.length - 1; i >= 0; i--) {		
-		largestNodes[i].flipFlop =  (flipFlop % 2 == 1) ?  (flipFlop*-1) : (flipFlop);	
-		flipFlop++;
-	}		 
-	largestNodes.splice(networkLargeNodeLimit,largestNodes.length-networkLargeNodeLimit); 
-	largestNodes.sort(function(a,b) {
-		return b.flipFlop - a.flipFlop;
-	});			
-	
-	
-	if (visMode=="wave"){
-	
-		//we want to pin some of the larger nodes to the outside in order to keep things readable, so figure our where to put them and store it in this obj array
-		for (n in largestNodes){			
-				var nudge = 0;
-				var r = visHeight/2.5;
-				var a = (186 / largestNodes.length) * n;
-				
-				if (n==0){nudge = 50;}
-				if (n==1){nudge = -50;}
-		
-				largestNodes[n].x = (visWidth/2) + (r+visWidth/4) * Math.cos(a);
-				largestNodes[n].y = (visHeight/2) + nudge - 10 + r * Math.sin(a);		
-						
-			/*	
-			 
-				vis.append("circle")
-						.attr("class", "node")
-						.attr("cx", largestNodes[n].x)
-						.attr("cy", largestNodes[n].y)
-						.attr("r", 8)
-						.style("fill", function(d, i) { return fill(i & 3); })
-						.style("stroke", function(d, i) { return d3.rgb(fill(i & 3)).darker(2); })
-						.style("stroke-width", 1.5);
-			
-				*/
-				
-		} 
-	}
-	
-	
-
-	
-	  
-}
-
-
-//	Builds the base nodes and links arrays 
-function buildBase(){
-	 
-	
-	var allObjects = [];	 
-	var quickLookup = {};
-
-	//we need to establish the nodes and links
-	//we do it by making a string array and adding their ids to it, if it is unique in the string array then we can add the object to the node array
-	
-	    
-	for (x in tripleObject){	//each x here is a person
-	
-		
-		if (allObjects.indexOf(String(x))==-1){
-			allObjects.push(String(x));
-			baseNodes.push({id: String(x)});
-		}
-		
-		for (y in tripleObject[x]){		//this level is the types of relations, mentions, knows, etc. each y here is a realtion bundle
-			for (z in tripleObject[x][y]){	//here each z is a relation					
-				if (allObjects.indexOf(tripleObject[x][y][z].value)==-1){
-
-					baseNodes.push({id: tripleObject[x][y][z].value});
-					allObjects.push(tripleObject[x][y][z].value);
-					 
-					//we are adding props to this object to store their # of connections, depending on the order they may have already been added if they
-					//were added by the creatLink function, so in both places check for the propery and add it in if it is not yet set
-					
-					if (!connectionCounter.hasOwnProperty(tripleObject[x][y][z].value)){
-						connectionCounter[tripleObject[x][y][z].value] = 0;	
-					} 
-
-					if (!quickLookup.hasOwnProperty(tripleObject[x][y][z].value)){
-						quickLookup[tripleObject[x][y][z].value] = -1;	
-					} 
-					
-				}
-				createLink(String(x),tripleObject[x][y][z].value);
-			}
-		} 
-	} 		
-	 
-	 
-	//asign the number of connections each node has  and add the label	
-	for (aNode in baseNodes){		
-		baseNodes[aNode].connections = connectionCounter[baseNodes[aNode].id];	
-		if (baseNodes[aNode].connections>largestConnection){largestConnection=baseNodes[aNode].connections;}	
-		
-		//build an human label
-		var id = baseNodes[aNode].id;
-		var label = "";
-
-		if (nameObject.hasOwnProperty(id)){
-
-			if (nameObject[id]['http://xmlns.com/foaf/0.1/name']){
-				label = nameObject[id]['http://xmlns.com/foaf/0.1/name'][0].value;
-			}
-		}
-
-		if (label == ""){
-			label = $.trim(decodeURIComponent(baseNodes[aNode].id.split("/")[baseNodes[aNode].id.split("/").length-1]).replace(/\_/g,' '));
-			if (label.search(/\(/) != -1){
-				label = label.substring(0,	label.indexOf("("));			
-			}  
-			label = $.trim(label);
-
-		}
-
-		idLookup[baseNodes[aNode].id] = encodeURIComponent(label.replace(/\s/g,"_"));
-
-
-		baseNodes[aNode].label = label;		
-		
-		
-		//build a label lastname first
-		label = label.split(" ");
-
-		if (label[label.length-1].toLowerCase()=='jr.' || label[label.length-1].toLowerCase()=='jr' || label[label.length-1].toLowerCase()=='sr.' || label[label.length-1].toLowerCase()=='sr'){
-			
-			var lastLabel = label[label.length-2].replace(',','') + ' ' +  label[label.length-1] + ',';
-			
-			for(var i = 0; i <= label.length-2; i++){
-				
-				lastLabel = lastLabel + ' ' + label[i].replace(',','');
-				
-			}
-			
-			
-			
-			
-		}else{
-			
-			var lastLabel =  label[label.length-1] + ',';
-			for(var i = 0; i <= label.length-2; i++){
-				
-				lastLabel = lastLabel + ' ' + label[i].replace(',','');
-				
-			}			
-			 
-			
-			
-		}
-		
-		baseNodes[aNode].labelLast = lastLabel;	
-	}	
-	
-	 
-	//we are building the similarity index here, basiclly it loops through all of the people and compairs their connections with everyone else
-	//people who have similar connections have larger  simlarityIndex = the # of connections	 
-	for (var key in connectionIndex) {	
-		var tmpAry = [];		
-		if (connectionIndex[key].length > 1){		
-			for (var key2 in connectionIndex) {						
-				if (key != key2){					
-					if (connectionIndex[key2].length > 1){
-						var tmpCount = 0;						
-						tmpCount =  connectionIndex[key].filter(function(i) {return !(connectionIndex[key2].indexOf(i) == -1);}).length;
-						if (tmpCount>1){
-							tmpAry.push({name:key2,count:tmpCount})
-							if (tmpCount>largestSimilarity){largestSimilarity=tmpCount;}
-						}
-					}
-				}			 
-			}
-		}
-		tmpAry.sort(function(a,b) {
-			return b.count - a.count;
-		});			
-		 
-		simlarityIndex[key] = {}; 
-		
-		for (x in tmpAry){			 
-			simlarityIndex[key][tmpAry[x].name]=tmpAry[x].count;
-		}
-		
-		
-		
-		
-	}		
- 
-		
-			
-	function createLink(id1, id2){	
-		var obj1 = null, obj2 = null;		
-		
-		//in an effor to speed this lookup a little is to see if we have indexed the pos of the requested ids already, if so do not loop		
-		if (quickLookup[id1]>-1 && quickLookup[id2]>-1){			
-			obj1 = quickLookup[id1];
-			obj2 = quickLookup[id2];			
-  		}else{
-			//not yet in the quicklookup object, it will be added here	
-			for (q in baseNodes){
-				if (baseNodes[q].id == id1){obj1 = q;}
-				if (baseNodes[q].id == id2){obj2 = q;}
-				if (obj1!=null&&obj2!=null){
-					
-				 
-					quickLookup[id1] = obj1;
-					quickLookup[id2] = obj2;				
-					
-					break;
-				}	
-			}
-					
-		}
-		
-		var customClass = "link_" + id1.split("/")[id1.split("/").length-1].replace(cssSafe,''); 
-		customClass = customClass + " link_" + id2.split("/")[id2.split("/").length-1].replace(cssSafe,''); 
-		
-		baseLinks.push({source: baseNodes[obj1], target: baseNodes[obj2], distance: 5, customClass:customClass});
-		
-		//+1 the number of conenctions, of it is not yet in the object, add it at 1
-		if (!connectionCounter.hasOwnProperty(id1)){
-			connectionCounter[id1] = 1;
-		}else{
-			connectionCounter[id1] = connectionCounter[id1] + 1;
-		}
-		if (!connectionCounter.hasOwnProperty(id2)){
-			connectionCounter[id2] = 1;
-		}else{
-			connectionCounter[id2] = connectionCounter[id2] + 1;
-		}		
-		 	
-			
-		//add this relation ship to the connectionIndex object
-		//has propery yet?
-		if (!connectionIndex.hasOwnProperty(id1)){
-			connectionIndex[id1] = [];
-		}		
-		if (!connectionIndex.hasOwnProperty(id2)){
-			connectionIndex[id2] = [];
-		}				
-		
-		//does it have this relationship already?
-		if (connectionIndex[id1].indexOf(id2) == -1){
-			connectionIndex[id1].push(id2);	
-		}	
-		if (connectionIndex[id2].indexOf(id1) == -1){
-			connectionIndex[id2].push(id1);	
-		}
-	
-			
-		
-				
-	}	
-	
-	 
-	
-	
-}
-
 
 function filter(clear){
 	
@@ -915,6 +639,14 @@ function filter(clear){
 	
 	if (visMode == 'person'){
 	
+		for (var key in connectionIndex) {		
+			if (connectionIndex[key].indexOf(usePerson)==-1 && key != usePerson){				
+				nodesRemove[key]=true;	
+			}
+		}
+		
+	}else if (visMode == 'person_gender'){
+
 		for (var key in connectionIndex) {		
 			if (connectionIndex[key].indexOf(usePerson)==-1 && key != usePerson){				
 				nodesRemove[key]=true;	
@@ -1042,15 +774,6 @@ function filter(clear){
 	} 
 
 
-	/*
-	
-	for (var i = nodesRemove.length - 1; i >= 0; i--) {	
-		nodes.splice(nodesRemove[i],1);
-	}
-	for (var i = linksRemove.length - 1; i >= 0; i--) {	
-		links.splice(linksRemove[i],1);
-	}
-	*/	
 	
 	 
 
@@ -1062,7 +785,19 @@ function filter(clear){
 		workingNodes[aNode].x = Math.floor((Math.random()*visWidth)+1);
 		
 		
-		if (visMode != "person"){
+
+		if (visMode == "gender"){
+			for (large in largestNodesGender){
+				if (largestNodesGender[large].node == workingNodes[aNode].id){
+					workingNodes[aNode].lockX = largestNodesGender[large].x;
+					workingNodes[aNode].lockY = largestNodesGender[large].y;				
+					workingNodes[aNode].lock = true; 
+				}			
+			}		
+		
+		}
+		
+	 else if (visMode == "wave" || visMode == "clique"){
 			for (large in largestNodes){
 				if (largestNodes[large].node == workingNodes[aNode].id){
 					workingNodes[aNode].lockX = largestNodes[large].x;
@@ -1072,7 +807,7 @@ function filter(clear){
 			}
 		}
 		
-		if (visMode=="person" && workingNodes[aNode].id == usePerson){
+		if ( ((visMode=="person") || (visMode == "person_gender")) && workingNodes[aNode].id == usePerson){
 			usePersonIndex = aNode;
 		}
 		
@@ -1092,35 +827,6 @@ function filter(clear){
 	}		
 	
 	
-	/*
-	if(visMode == 'dynamic'){		
-		//we also dont want to double add nodes, we needed to leave them in up to this point so the new links could be drawn, but, now take them out
-		var temp = [];
-		for (r in nodes){
-		
-			var add=true;
-		
-			//is it already in there?
-			for (n in temp){
-				if (nodes[r].id == temp[n].id){
-					add=false;
-				}
-			}
-		
-			if (add){
-				temp.push(nodes[r]);
-			}		
-			
-		}		
-		nodes = temp;
-		
-		
-		
-	} 	
-	
-	
-	console.log(nodes);
-	*/
 	
 	 
 	restart(); 
@@ -1131,7 +837,6 @@ function filter(clear){
 	
 	
 }
-
 
 function restart(){
  	
@@ -1155,10 +860,10 @@ function restart(){
 	vis.selectAll("line.link")
 	  .data(links)
 	.enter().insert("line", "circle.node")
-	  .style("stroke",function(d){return edgeColor(d);}) 
+	  .style("stroke",function(d){ if (visMode=="gender" || visMode =="person_gender"){return edgeColor(d.target);}else{return edgeColor(d);};}) 
 	  .style("stroke-width",function(d){return edgeStrokeWidth(d);}) 	  
 	  .attr("class", function(d){return "link " + d.customClass})
-	  .attr("marker-end", function(d) { return  (visMode=="person"||visMode=="dynamic") ? "url(#FOAFknows)" : "none"; })
+	  .attr("marker-end", function(d) { return  (visMode=="person"||visMode=="dynamic" || visMode=="person_gender") ? "url(#FOAFknows)" : "none"; })
 	  .attr("x1", function(d) { return d.source.x; })
 	  .attr("y1", function(d) { return d.source.y; })
 	  .attr("x2", function(d) { return d.target.x; })
@@ -1181,7 +886,8 @@ function restart(){
 				//clearTimeout(showPopupTimer);
 				
 				currentNode = d;
-				showPopup(d);	
+				
+				showPopup(d);		
 		
 			//}, 200, [d]);	
 			
@@ -1192,8 +898,10 @@ function restart(){
 			hidePopupTimer = setTimeout(hidePopup,150); 	
 			
 		}).on("click",function(d){
+
 	 
 			hidePopup();
+	
 			
 			
 			 $("#network").fadeOut('fast',
@@ -1201,7 +909,12 @@ function restart(){
 					 
 
 					 usePerson = d.id;
-					 changeVisMode("person");
+					 if (visMode == "gender" || visMode =="person_gender"){
+					 	changeVisMode("person_gender");
+					 }else{
+					 	changeVisMode("person");
+					 }	
+					 	
 					 
 				 }	  
 			 );
@@ -1223,8 +936,9 @@ function restart(){
 		.attr("cx", function(d) { return 0; })
 		.attr("cy", function(d) { return 0; })
 		.attr("r", function(d) { return  returnNodeSize(d); })
-		.style("fill", function(d, i) { return "#ccc"; }) //return fill(i & 3); })
-		.style("stroke", function(d, i) { return returnNodeColor(d); })
+// 		.style("fill", function(d, i) { return "#ccc"; }) //return fill(i & 3); })
+	  	.style("fill",function(d, i){ if (visMode=="gender" || visMode == "person_gender"){ return returnNodeColor(d); }else{return "#ccc";};})	
+		.style("stroke", function(d, i) { return returnNodeStrokeColor(d);})
 		.style("stroke-width", function(d){return returnNodeStrokeWidth(d);});
 		
  
@@ -1236,12 +950,22 @@ function restart(){
 		  .attr("xlink:href", function(d){ 
 		  
 			var useId = $.trim(decodeURI(d.id).split("\/")[decodeURI(d.id).split("\/").length-1]);
- 			if (fileNames.indexOf(useId+'.png')==-1){
-				return "menu/no_image.png";			
-			}else{
-				return "/image/round/" + useId+'.png';
+			if (visMode != 'gender'){
+				if (fileNames.indexOf(useId+'.png')==-1){
+					return "menu/no_image.png";			
+				}else{
+					return "/image/round/" + useId+'.png';	
+				}
 			}
-			
+			else{
+				var personURI = "<"+d.id+">";
+				if (interviewedPeople.indexOf(personURI) != -1 ){
+					return "/image/round/" + useId+'.png';	
+					console.log(d.id);
+				}	
+			}	 
+				
+						
 		  
 		  
 		  })
@@ -1253,6 +977,7 @@ function restart(){
  	nodeEnter.append("svg:text") 
   	  .attr("id", function(d){  return "circleText_" + d.id.split("/")[d.id.split("/").length-1].replace(cssSafe,'')})
       .attr("font-size", function(d){return returnNodeSize(d) / 2})
+// no variant font size for this gender view     
 	  .attr("class",  function(d){return "circleText"})
 	  .attr("font-family", "helvetica, sans-serif")
 	  .attr("text-anchor","middle") 
@@ -1265,12 +990,12 @@ function restart(){
 	
 	force.start();	
 
-
-
+	
+	
 	//controls the movement of the nodes	
-	force.on("tick", function(e) {
+	force.on("tick", function(e) {	
 		
-		if (visMode=="wave"){
+		if (visMode=="wave" || visMode == "gender"){
 			for (aNode in nodes){
 				if (nodes[aNode].lock){
 					nodes[aNode].x = nodes[aNode].lockX;
@@ -1284,8 +1009,9 @@ function restart(){
 			}
 			
 		}
+				
 	 
- 		if (visMode=="person"){
+ 		if ((visMode=="person") ||  (visMode == "person_gender")){
 			nodes[usePersonIndex].x = visWidth/2;
 			nodes[usePersonIndex].y = visHeight/2;				
 		}
@@ -1357,113 +1083,717 @@ function restart(){
 	
 }
 
-	function displayLabel(d){
+//process the triple data through the RDF jquery plugin to create an object
+function buildTripleStore(data){
 	
-		if (visMode=="person" || visMode == "dynamic"){
-			return "block";	
-		}else{
-			return (d.connections >= edgesInterval/1.5) ? "block" : "none";
-		}
+		tripleStore = $.rdf.databank([],
+		  { base: 'http://www.dbpedia.org/',
+			namespaces: { 
+			  dc: 'http://purl.org/dc/elements/1.1/', 
+			  foaf: 'http://xmlns.com/foaf/0.1/', 
+			  lj: 'http://www.linkedjazz.org/lj/' } });	  
 		
-	}
+		
+		//I'm only intrested in the knowsOf right now before we work more on verifying the 52nd street stuff, so just make all relationships knowsof
+		var alreadyKnows = [];
 
-	function returnNodeStrokeWidth(d){
 
-		if (visMode == "person" || visMode == "dynamic"){
-			
-			if (dynamicPeople.indexOf(d.id) != -1 || usePerson == d.id){
+		/***********
+		* 	The file we are loading is expected to be a triple store in the format '<object> <predicate> <object> .\n'
+		*   Note the space after the final object and the '.' and the \n only
+		************/	  
+		var triples = data.split("\n");
+		for (x in triples){			
+			if (triples[x].length > 0){		
+				try{		
+
+					//I'm only intrested in the knowsOf right now before we work more on verifying the 52nd street stuff, so just make all relationships knowsof
+					var hash = triples[x].split("> <")[0] + triples[x].split("> <")[2];
+
+
+
+					//only add it once
+					if (alreadyKnows.indexOf(hash) === -1){
+
+						var newKnowsOf = triples[x].split("> <")[0] + "> <http://purl.org/vocab/relationship/knowsOf> <" + triples[x].split("> <")[2];
+						alreadyKnows.push(hash);
+						//console.log(newKnowsOf);
+						tripleStore.add(newKnowsOf);
+						//tripleStore.add(triples[x]);
 				
-				return 5;				
-			}
-			
-			
-		}
-		
-		return 1.5	
-		
-	}
 
-	function returnNodeColor(d){
-	
-		if (visMode == "person" || visMode == "dynamic"){
-			
-			if (dynamicPeople.indexOf(d.id) != -1 || usePerson == d.id){
-				
-				return "#FC0";				
-			}
-			
-			
-		}
-		
-		return "#666"
-			
-	}
 
-	function returnNodeSize(d){
-	
-		if (visMode=="person"){
-		
-			if (d.id == usePerson){
-				return 50;	
-			}else{
-				return 15 + Math.round(d.connections/15);
-			}
-	
-		}else if (visMode == "dynamic"){
-			
-			if (dynamicPeople.indexOf(d.id)==-1){
-				return 20;	
-			}else{
-				return 35;
-			}
-			
-			
-			
-		}else{
-		
-			return Math.round(Math.sqrt(d.connections) + (d.connections/6));
+					}
+					
+
+
+
+				}
+
+
+				catch(err){
+ 					//if it cannot load one of the triples it is not a total failure, keep going
+					console.log('There was an error processing the data file:');
+					console.log(err);										
+				}
 				
+				// creating a list of interviewees comprised of unique "sources" across triples for gender view
+				
+				try{
+// 					console.log(triples[x].split("> <")[0]+ ">");
+					var newSource = triples[x].split("> <")[0]+ ">";
+					
+					if (interviewedPeople.indexOf(newSource) === -1 ) {
+						interviewedPeople.push(newSource);
+					
+					}
+				}
+				
+				
+				
+				catch(err){
+ 					//if it cannot load one of the triples it is not a total failure, keep going
+					console.log('There was an error processing the data file:');
+					console.log(err);										
+				}				
+			}
 		}
-		
-		
-	}
+
  
- 
+		tripleObject = tripleStore.dump()
 
-//wooo!, from https://groups.google.com/forum/?fromgroups#!topic/d3-js/ndyvibO7wDA
-function pointsBetween(circle1,circle2,standOff1,standOff2){
-  var x1=circle1.x, y1=circle1.y,
-      x2=circle2.x, y2=circle2.y,
-      dx=x2-x1,                    dy=y2-y1,
-      r1=returnNodeSize(circle1) + (standOff1||0),
-      r2=returnNodeSize(circle2) + (standOff2||0);
-  if ( (r1+r2)*(r1+r2) >= dx*dx+dy*dy ) return [[0,0],[0,0]];
-  var a=Math.atan2(dy,dx), c=Math.cos(a), s=Math.sin(a);
-  return [
-    [x1+c*r1,y1+s*r1],
-    [x2-c*r2,y2-s*r2]
-  ];
+		console.log(interviewedPeople.length);
+		console.log(alreadyKnows.length);
+	
+	
+}
+
+//process the triple data through the RDF jquery plugin to create an object
+function buildDescriptionStore(data){
+	
+		var descStore = $.rdf.databank([],
+		  { base: 'http://www.dbpedia.org/',
+			namespaces: { 
+			  dc: 'http://purl.org/dc/elements/1.1/', 
+			  wc: 'http://www.w3.org/2000/01/rdf-schema', 
+			  lj: 'http://www.linkedjazz.org/lj/' } });	  
+		
+		
+		/***********
+		* 	The file we are loading is expected to be a triple dump in the format '<object> <predicate> <object> .\n'
+		*   Note the space after the final object and the '.' and the \n only
+		************/	  
+		var triples = data.split("\n");
+		for (x in triples){			
+			if (triples[x].length > 0){		
+				try{		
+					descStore.add(triples[x]);
+				}
+				catch(err){
+ 					//if it cannot load one of the triples it is not a total failure, keep going
+					console.log('There was an error processing the data file:');
+					console.log(err);										
+				}
+			}
+		}
+
+ 
+		descObject = descStore.dump()	
+		 
+	
+	
+}
+
+//process the triple data through the RDF jquery plugin to create an object
+function buildNameStore(data){
+	
+		var nameStore = $.rdf.databank([],
+		  { base: 'http://www.dbpedia.org/',
+			namespaces: { 
+			  dc: 'http://purl.org/dc/elements/1.1/', 
+			  wc: 'http://www.w3.org/2000/01/rdf-schema', 
+			  lj: 'http://www.linkedjazz.org/lj/' } });	  
+		
+		
+		/***********
+		* 	The file we are loading is expected to be a triple dump in the format '<object> <predicate> <object> .\n'
+		*   Note the space after the final object and the '.' and the \n only
+		************/	  
+		var triples = data.split("\n");
+		for (x in triples){			
+			if (triples[x].length > 0){		
+				try{		
+					nameStore.add(triples[x]);
+				}
+				catch(err){
+ 					//if it cannot load one of the triples it is not a total failure, keep going
+					console.log('There was an error processing the data file:');
+					console.log(err);										
+				}
+			}
+		}
+
+ 
+		nameObject = nameStore.dump();	
+		 
+	
+	
+}
+
+//process the triple data through the RDF jquery plugin to create an object: gender
+function buildGenderStore(data){
+	
+		var genderStore = $.rdf.databank([],
+		  { base: 'http://www.dbpedia.org/',
+			namespaces: { 
+			  dc: 'http://purl.org/dc/elements/1.1/', 
+			  wc: 'http://www.w3.org/2000/01/rdf-schema', 
+			  lj: 'http://www.linkedjazz.org/lj/' } });	  
+		
+		
+		/***********
+		* 	The file we are loading is expected to be a triple dump in the format '<object> <predicate> <object> .\n'
+		*   Note the space after the final object and the '.' and the \n only
+		************/	  
+		var triples = data.split("\n");
+		for (x in triples){			
+			if (triples[x].length > 0){		
+				try{		
+					genderStore.add(triples[x]);
+				}
+				catch(err){
+ 					//if it cannot load one of the triples it is not a total failure, keep going
+					console.log('There was an error processing the data file:');
+					console.log(err);										
+				}
+			}
+		}
+
+ 
+		genderObject = genderStore.dump();	
+		 
+	
+	
+}
+
+function dataAnalysis(){
+
+	//we need to know some stats about the people before we start to render the network
+	//find out the largest nodes
+	var totalConnections = 0;
+	for (x in tripleObject){	//each x here is a person
+		
+		var size = 0;
+		for (y in tripleObject[x]){		//this level is the types of relations, mentions, knows, etc. each y here is a realtion bundle
+			size = size + tripleObject[x][y].length;
+		}		
+		
+		var sizeObj = {}; 
+		sizeObj.node = x;				
+		sizeObj.size = size;		
+		sizeObj.random = Math.floor((Math.random()*100)+1);			
+		largestNodes.push(sizeObj);
+		totalConnections = totalConnections + size;
+	}
+	
+	
+	 
+	//now an array of objects of with the .node property being the index to the tripleObect
+	largestNodes.sort(function(a,b) {
+		return b.size - a.size;
+	});	
+	
+	
+	//find out the range of number of connections to color our edges
+	edgesAvg = Math.floor(totalConnections/largestNodes.length);
+	edgesInterval = (largestNodes[0].size - edgesAvg) / 3;
+	console.log(edgesInterval);
+	
+	
+	var flipFlop = 0;
+	//for (largeNode in largestNodes){
+	//	largestNodes[largeNode].flipFlop =  (flipFlop % 2 == 1) ?  (flipFlop*-1) : (flipFlop);
+	for (var i = largestNodes.length - 1; i >= 0; i--) {		
+		largestNodes[i].flipFlop =  (flipFlop % 2 == 1) ?  (flipFlop*-1) : (flipFlop);	
+		flipFlop++;
+	}	
+				 
+	largestNodes.splice(networkLargeNodeLimit,largestNodes.length-networkLargeNodeLimit); 
+	largestNodes.sort(function(a,b) {
+		return b.flipFlop - a.flipFlop;
+	});
+
+		
+			
+	
+	if (visMode=="wave"){
+	
+		//we want to pin some of the larger nodes to the outside in order to keep things readable, so figure our where to put them and store it in this obj array
+		for (n in largestNodes){			
+				var nudge = 0;
+				var r = visHeight/2.5;
+				var a = (186 / largestNodes.length) * n;
+				
+				if (n==0){nudge = 50;}
+				if (n==1){nudge = -50;}
+		
+				largestNodes[n].x = (visWidth/2) + (r+visWidth/4) * Math.cos(a);
+				largestNodes[n].y = (visHeight/2) + nudge - 10 + r * Math.sin(a);		
+						
+			/*	
+			 
+				vis.append("circle")
+						.attr("class", "node")
+						.attr("cx", largestNodes[n].x)
+						.attr("cy", largestNodes[n].y)
+						.attr("r", 8)
+						.style("fill", function(d, i) { return fill(i & 3); })
+						.style("stroke", function(d, i) { return d3.rgb(fill(i & 3)).darker(2); })
+						.style("stroke-width", 1.5);
+			
+				*/
+				
+		} 
+	}
+
+	
+	  
+}
+
+//	Builds the base nodes and links arrays 
+function buildBase(){
+	 
+	
+	var allObjects = [];	 
+	var quickLookup = {};
+
+	//we need to establish the nodes and links
+	//we do it by making a string array and adding their ids to it, if it is unique in the string array then we can add the object to the node array
+	
+	    
+	for (x in tripleObject){	//each x here is a person
+	
+		
+		if (allObjects.indexOf(String(x))==-1){
+			allObjects.push(String(x));
+			baseNodes.push({id: String(x)});
+		}
+		
+		for (y in tripleObject[x]){		//this level is the types of relations, mentions, knows, etc. each y here is a realtion bundle
+			for (z in tripleObject[x][y]){	//here each z is a relation					
+				if (allObjects.indexOf(tripleObject[x][y][z].value)==-1){
+
+					baseNodes.push({id: tripleObject[x][y][z].value});
+					allObjects.push(tripleObject[x][y][z].value);
+					 
+					//we are adding props to this object to store their # of connections, depending on the order they may have already been added if they
+					//were added by the creatLink function, so in both places check for the propery and add it in if it is not yet set
+					
+					if (!connectionCounter.hasOwnProperty(tripleObject[x][y][z].value)){
+						connectionCounter[tripleObject[x][y][z].value] = 0;	
+					} 
+
+					if (!quickLookup.hasOwnProperty(tripleObject[x][y][z].value)){
+						quickLookup[tripleObject[x][y][z].value] = -1;	
+					} 
+					
+				}
+				createLink(String(x),tripleObject[x][y][z].value);
+			}
+		} 
+	} 		
+	 
+	 
+	//asign the number of connections each node has  and add the label	
+	for (aNode in baseNodes){		
+		baseNodes[aNode].connections = connectionCounter[baseNodes[aNode].id];	
+		if (baseNodes[aNode].connections>largestConnection){largestConnection=baseNodes[aNode].connections;}	
+		
+		//build an human label
+		var id = baseNodes[aNode].id;
+		var label = "";
+		var gender = "";
+
+		if (nameObject.hasOwnProperty(id)){
+
+			if (nameObject[id]['http://xmlns.com/foaf/0.1/name']){
+				label = nameObject[id]['http://xmlns.com/foaf/0.1/name'][0].value;
+			}
+		}
+		// add gender information	
+		if (genderObject.hasOwnProperty(id)){
+			if (genderObject[id]['http://xmlns.com/foaf/0.1/gender']){
+				gender = genderObject[id]['http://xmlns.com/foaf/0.1/gender'][0].value; 
+		
+			}
+		
+		}		
+
+		if (label == ""){
+			label = $.trim(decodeURIComponent(baseNodes[aNode].id.split("/")[baseNodes[aNode].id.split("/").length-1]).replace(/\_/g,' '));
+			if (label.search(/\(/) != -1){
+				label = label.substring(0,	label.indexOf("("));			
+			}  
+			label = $.trim(label);
+
+		}
+
+		idLookup[baseNodes[aNode].id] = encodeURIComponent(label.replace(/\s/g,"_"));
+
+
+		baseNodes[aNode].label = label;		
+		baseNodes[aNode].gender = gender;	
+		
+		
+		//build a label lastname first
+		label = label.trim().split(" ");
+
+		if (label[label.length-1].toLowerCase()=='jr.' || label[label.length-1].toLowerCase()=='jr' || label[label.length-1].toLowerCase()=='sr.' || label[label.length-1].toLowerCase()=='sr'){
+			
+			var lastLabel = label[label.length-2].replace(',','') + ' ' +  label[label.length-1] + ',';
+			
+			for(var i = 0; i <= label.length-2; i++){
+				
+				lastLabel = lastLabel + ' ' + label[i].replace(',','');
+				
+			}
+			
+			
+			
+			
+		}else{
+			
+			var lastLabel =  label[label.length-1] + ',';
+			for(var i = 0; i <= label.length-2; i++){
+				lastLabel = lastLabel + ' ' + label[i].replace(',','');
+			}			
+			 
+			
+			
+		}
+		
+		baseNodes[aNode].labelLast = lastLabel;	
+	}	
+	
+	 
+	//we are building the similarity index here, basiclly it loops through all of the people and compairs their connections with everyone else
+	//people who have similar connections have larger  simlarityIndex = the # of connections	 
+	for (var key in connectionIndex) {	
+		var tmpAry = [];		
+		if (connectionIndex[key].length > 1){		
+			for (var key2 in connectionIndex) {						
+				if (key != key2){					
+					if (connectionIndex[key2].length > 1){
+						var tmpCount = 0;						
+						tmpCount =  connectionIndex[key].filter(function(i) {return !(connectionIndex[key2].indexOf(i) == -1);}).length;
+						if (tmpCount>1){
+							tmpAry.push({name:key2,count:tmpCount})
+							if (tmpCount>largestSimilarity){largestSimilarity=tmpCount;}
+						}
+					}
+				}			 
+			}
+		}
+		tmpAry.sort(function(a,b) {
+			return b.count - a.count;
+		});			
+		 
+		simlarityIndex[key] = {}; 
+		
+		for (x in tmpAry){			 
+			simlarityIndex[key][tmpAry[x].name]=tmpAry[x].count;
+		}
+		
+		
+		
+		
+	}
+	function createLink(id1, id2){	
+		var obj1 = null, obj2 = null;		
+		
+		//in an effor to speed this lookup a little is to see if we have indexed the pos of the requested ids already, if so do not loop		
+		if (quickLookup[id1]>-1 && quickLookup[id2]>-1){			
+			obj1 = quickLookup[id1];
+			obj2 = quickLookup[id2];			
+  		}else{
+			//not yet in the quicklookup object, it will be added here	
+			for (q in baseNodes){
+				if (baseNodes[q].id == id1){obj1 = q;}
+				if (baseNodes[q].id == id2){obj2 = q;}
+				if (obj1!=null&&obj2!=null){
+					
+				 
+					quickLookup[id1] = obj1;
+					quickLookup[id2] = obj2;				
+					
+					break;
+				}	
+			}
+					
+		}
+		
+		var customClass = "link_" + id1.split("/")[id1.split("/").length-1].replace(cssSafe,''); 
+		customClass = customClass + " link_" + id2.split("/")[id2.split("/").length-1].replace(cssSafe,''); 
+		
+		baseLinks.push({source: baseNodes[obj1], target: baseNodes[obj2], distance: 5, customClass:customClass});
+		
+		//+1 the number of conenctions, of it is not yet in the object, add it at 1
+		if (!connectionCounter.hasOwnProperty(id1)){
+			connectionCounter[id1] = 1;
+		}else{
+			connectionCounter[id1] = connectionCounter[id1] + 1;
+		}
+		if (!connectionCounter.hasOwnProperty(id2)){
+			connectionCounter[id2] = 1;
+		}else{
+			connectionCounter[id2] = connectionCounter[id2] + 1;
+		}		
+		 	
+			
+		//add this relation ship to the connectionIndex object
+		//has propery yet?
+		if (!connectionIndex.hasOwnProperty(id1)){
+			connectionIndex[id1] = [];
+		}		
+		if (!connectionIndex.hasOwnProperty(id2)){
+			connectionIndex[id2] = [];
+		}				
+		
+		//does it have this relationship already?
+		if (connectionIndex[id1].indexOf(id2) == -1){
+			connectionIndex[id1].push(id2);	
+		}	
+		if (connectionIndex[id2].indexOf(id1) == -1){
+			connectionIndex[id2].push(id1);	
+		}
+	
+			
+		
+				
+	}	
+	
+	 
+	
+	
 }
 
 
 
-function hidePopup(){
-
-
-	//hidePopupTimer
-	jQuery("#popUp").css("display","none");
-
-	var customClass = "link_" + currentNode.id.split("/")[currentNode.id.split("/").length-1].replace(/%|\(|\)|\.|\,/g,''); 	
-
-	d3.selectAll(".marker").attr("stroke-opacity",1).attr("fill-opacity",1)
-	d3.selectAll(".link").attr("stroke-opacity",1).style("fill-opacity",1).style("stroke-width",function(d){return edgeStrokeWidth(d)});
-	d3.selectAll(".backgroundCircle").attr("fill-opacity",1).attr("stroke-opacity",1);			
-	d3.selectAll(".imageCircle").attr("display","block");
-	d3.selectAll(".circleText").attr("fill-opacity",1).attr("stroke-opacity",1);			
+function edgeColor(d){
+	
+	if (visMode=='dynamic'){return "#666";}
+// 	if (typeof d.connections == 'undefined'){
+// 		d = d.source;
+// 	}	
 
 	
+
+	if (visMode != "gender" && 	visMode != "person_gender"){
+		if (typeof d.connections == 'undefined'){
+			d = d.source;
+		}		
+	
+		if (d.connections <= edgesAvg){		
+			return "#bcbddc";	
+		}
+		if ((d.connections-edgesAvg)/edgesInterval <= 1.5){				
+			return "#9ecae1";	
+		}	
+		if ((d.connections-edgesAvg)/edgesInterval <= 2.5){				
+			return "#74c476";	
+		}
+	}
+	else{		
+	
+			if (d.gender == 'female'){
+				return "#e38585";
+			}
+			if (d.gender == 'male'){
+				return "#89b2f7";
+			}	
+			if (d.gender == 'unknown'){
+				return "#CCC";
+			}
+		}		
+		return "#fdae6b";	
 	
 }
+
+function edgeStrokeWidth(d){
+
+	
+	if (visMode=="person" || visMode=="dynamic" ){
+		
+	 	
+		if (nodes.length < 10){
+			return 2;	
+		}
+
+		if (nodes.length < 30){
+			return 1;	
+		}		
+		if (nodes.length < 40){
+			return 0.5;	
+		}		
+				
+		return .3;		
+	}
+	if (visMode == "person_gender"){
+		return .5;
+	}		
+	
+	return 0.3;	
+	
+}
+
+
+function returnNodeSize(d){
+	
+	if (visMode=="person" || visMode=="person_gender"){
+	
+		if (d.id == usePerson){
+			return 50;	
+		}else{
+			return 15 + Math.round(d.connections/15);
+		}
+
+	}else if (visMode == "dynamic"){
+		
+		if (dynamicPeople.indexOf(d.id)==-1){
+			return 20;	
+		}else{
+			return 35;
+		}
+		
+		
+		
+	}else{
+	
+		return Math.round(Math.sqrt(d.connections) + (d.connections/6));
+			
+	}
+		
+		
+}
+
+function returnNodeColor(d){
+
+	if (visMode == "person" || visMode == "dynamic"  || visMode == "person_dynamic"){
+		
+		if (dynamicPeople.indexOf(d.id) != -1 || usePerson == d.id){
+			
+			return "#FC0";				
+		}
+		
+		
+	}
+
+	if (visMode == "gender" || visMode == "person_gender"){
+		if (d.gender == 'female'){
+			return "#d37474";
+		}
+		if (d.gender == 'male'){
+			return "#6694e2";
+		}	
+		if (d.gender == 'unknown'){
+			return "#CCC";
+		}	
+	
+	}
+	
+	return "#666"
+			
+}
+
+function returnNodeStrokeWidth(d){
+
+	if (visMode == "person" || visMode == "dynamic" ){
+		
+		if (dynamicPeople.indexOf(d.id) != -1 || usePerson == d.id){
+			
+			return 5;				
+		}
+		
+		
+	}
+	if ( visMode == "person_gender"){
+// 		console.log(d.id);
+		
+		if (dynamicPeople.indexOf(d.id) != -1 || usePerson == d.id){
+	
+			return 7;
+		}
+		for( var i = 0, len = largestNodesGender.length; i < len; i++ ) {
+// 			console.log(largestNodesGender[i]);
+			if( largestNodesGender[i]['node'] === d.id ) {
+				return 5;
+			}	
+		}
+		return 3;
+			
+	}
+			
+	if (visMode == "gender"){
+		return 2;
+	}	
+	
+	return 1.5	
+	
+}
+
+function displayLabel(d){
+
+	if (visMode=="person" || visMode == "dynamic" || visMode == "person_gender" ){
+		return "block";	
+	}else if (visMode == "gender") {
+		return (d.connections >= edgesInterval/1.5) ? "none" : "none";  //does this actually hide the label????
+	}else{
+		return (d.connections >= edgesInterval/1.5) ? "block" : "none";
+	}
+	
+}
+
+function linkStrength(d){
+	
+// 	if (visMode=="free"){
+// 		//return Math.sqrt(d.source.connections)/15;		
+// 		//return 0;
+// 		return (d.source.connections / largestConnection) / 500;
+// 	}	
+	
+	if (visMode == "wave" || visMode == "gender"){
+		return Math.sqrt(d.source.connections)/9;		
+	}
+	if (visMode=="person" || visMode == "person_gender"){
+		return 0.2;		
+	}
+		
+	
+	if (visMode=="dynamic"){
+		return 0.01;		
+	}		
+	
+	if (visMode=="clique"){
+		//return Math.sqrt(d.source.connections)/8;		
+		
+		//we want to find the combined simlarity between the two people
+		var p1 = d.source.id;
+		var p2 = d.target.id;		
+		
+		var strength = 0;
+		 
+		
+		if (simlarityIndex[p1].hasOwnProperty(p2)){strength=simlarityIndex[p1][p2];}
+		if (simlarityIndex[p2].hasOwnProperty(p1)){strength=strength+simlarityIndex[p2][p1];}		
+		
+		
+		return (strength / (largestSimilarity*2));
+		
+	}	
+	
+}
+
+
 
 function showPopup(d,cords){
 	  
@@ -1531,7 +1861,8 @@ function showPopup(d,cords){
 	
 	var descText = '';	
 	if (descObject.hasOwnProperty(d.id)){
-
+		
+		
 		if (descObject[d.id]['http://dbpedia.org/ontology/abstract']){
 			var desc = descObject[d.id]['http://dbpedia.org/ontology/abstract'][0].value;
 			var r = /\\u([\d\w]{4})/gi;
@@ -1545,11 +1876,12 @@ function showPopup(d,cords){
 			var link = d.id.replace('dbpedia','wikipedia').replace('resource','wiki');
 
 			descText = descText.substring(0,250) + '...' + '<br>' + '<a class="popup-link" target="_blank" href="' + link + '">From Wikipedia</a><br><br>';	
-			
+		
 
 		}else{
 			descText = "";
 		}
+	
 
 		
 	}
@@ -1560,122 +1892,121 @@ function showPopup(d,cords){
 	//}
 	
 	var useId = $.trim(decodeURI(d.id).split("\/")[decodeURI(d.id).split("\/").length-1]);
-	 
-	jQuery("#popUp").empty();
+ 
+			jQuery("#popUp").empty();
 	
 	
- 	if (fileNames.indexOf(useId+'.png')==-1){	
-		var useImage = 'menu/no_image.png';
-	}else{
-		var useImage = '/image/round/' + useId+'.png'
-	}
+			if (fileNames.indexOf(useId+'.png')==-1){	
+				var useImage = 'menu/no_image.png';
+			}else{
+				var useImage = '/image/round/' + useId+'.png'
+			}
 	
 	
-	jQuery("#popUp").append(
+			jQuery("#popUp").append(
 	
-		$("<img>")
-			.attr("src", function(){return useImage;})
-			.css("height","75px")
-			.css("width","75px")
-			.css("min-height","75px")
-			.css("min-width","75px")
-			.css("position","absolute")
-			.css("left","0px")
-			.css("top","0px")						
-			.error(function(){$(this).css("visibility","hidden")})
-	).append(
-		$("<span>")
-			.css("color","#fff")
-			.text(d.label)
-			.css("position","absolute")
-			.css("left","80px")
-			.css("top","0px")
+				$("<img>")
+					.attr("src", function(){return useImage;})
+					.css("height","75px")
+					.css("width","75px")
+					.css("min-height","75px")
+					.css("min-width","75px")
+					.css("position","absolute")
+					.css("left","0px")
+					.css("top","0px")						
+					.error(function(){$(this).css("visibility","hidden")})
+			).append(
+				$("<span>")
+					.css("color","#fff")
+					.text(d.label)
+					.css("position","absolute")
+					.css("left","80px")
+					.css("top","0px")
 				
-	).append(
-		$("<div>")			 
-			.css("font-size","10px")
-			.css("width","138px")
-			.css("margin-left","80px")
-			.css("margin-top","22px")
-			.css("min-height","140px")
-			.css("text-align","left")
-			.attr("id","popupDesc")
-			.html(descText)
+			).append(
+				$("<div>")			 
+					.css("font-size","10px")
+					.css("width","138px")
+					.css("margin-left","80px")
+					.css("margin-top","22px")
+					.css("min-height","140px")
+					.css("text-align","left")
+					.attr("id","popupDesc")
+					.html(descText)
  
 				
-	).append(
-		$("<div>")
-
-			.css("position","absolute")
-			.css("border","solid 1px white")
-			.css("border-radius","5px")
-			.css("left","20px")
-			.css("cursor","pointer")
-			.css("top","85px")			
-			.css("visibility",function(){
-	
-				if (metaNames.indexOf(useId+'.meta')==-1){
-					return "hidden";			
-				}else{
-					return 'visible';
-				}
-				
-				
-			})			
-			.attr("title","Click to play music by " + d.label + ".")
- 			.append(
+			).append(
 				$("<div>")
-					.attr("id","playButton")
-					.data("useId",useId)
-					.click(function(){
+
+					.css("position","absolute")
+					.css("border","solid 1px white")
+					.css("border-radius","5px")
+					.css("left","20px")
+					.css("cursor","pointer")
+					.css("top","85px")			
+					.css("visibility",function(){
+						if (metaNames.indexOf(useId+'.meta')==-1 && metaNames.indexOf(d.label.replace(' ','_') +'.meta') == -1){
+							return "hidden";			
+						}else{
+							return 'visible';
+						}
+				
+				
+					})			
+					.attr("title","Click to play music by " + d.label + ".")
+					.append(
+						$("<div>")
+							.attr("id","playButton")
+							.data("useId",useId)
+							.click(function(){
 						
-						loadYouTube($(this).data("useId"));
+								loadYouTube($(this).data("useId"),d.label);
 						
 						
 						
-					})
-			)
+							})
+					)
   		
 	
 	
 	
-	);
+		);
+	
 
 
+		if ( ((visMode == 'person') || (visMode == 'person_gender') ) && nodes[usePersonIndex].label != d.label ){
 
-	if (visMode == 'person' && nodes[usePersonIndex].label != d.label ){
+			var domFragment = $("<div>").addClass('popup-transcript-link-holder');
 
-		var domFragment = $("<div>").addClass('popup-transcript-link-holder');
+			domFragment.append(
 
-		domFragment.append(
-
-			$("<div>")
-				.addClass('popup-transcript-link-image')
+				$("<div>")
+					.addClass('popup-transcript-link-image')
 				
-		);
+			);
 
 
-		domFragment.append(
+			domFragment.append(
 
-			$("<div>")
-				.addClass('popup-transcript-link')
-				.text("View transcript text about " + d.label + " and " + nodes[usePersonIndex].label)
-		);
-
-
-		domFragment.click(function launchDialogViewer(){
-			showDialogPopup(d.id,nodes[usePersonIndex].id);
-		});
-
-		domFragment.append($("<br>"));
+				$("<div>")
+					.addClass('popup-transcript-link')
+					.text("View transcript text about " + d.label + " and " + nodes[usePersonIndex].label)
+			);
 
 
+			domFragment.click(function launchDialogViewer(){
+				showDialogPopup(d.id,nodes[usePersonIndex].id);
+			});
 
-		$("#popUp").append(domFragment);
+			domFragment.append($("<br>"));
 
 
 
-	}
+			$("#popUp").append(domFragment);
+
+
+
+		}
 
 	 
 	
@@ -1723,7 +2054,240 @@ function showPopup(d,cords){
 		.css("top", useY + "px");
  
  	jQuery("#popUp").fadeIn(300);
+ 	
 		 
+}
+
+function hidePopup(){
+
+
+	//hidePopupTimer
+	jQuery("#popUp").css("display","none");
+
+	var customClass = "link_" + currentNode.id.split("/")[currentNode.id.split("/").length-1].replace(/%|\(|\)|\.|\,/g,''); 	
+
+	d3.selectAll(".marker").attr("stroke-opacity",1).attr("fill-opacity",1)
+	d3.selectAll(".link").attr("stroke-opacity",1).style("fill-opacity",1).style("stroke-width",function(d){return edgeStrokeWidth(d)});
+	d3.selectAll(".backgroundCircle").attr("fill-opacity",1).attr("stroke-opacity",1);			
+	d3.selectAll(".imageCircle").attr("display","block");
+	d3.selectAll(".circleText").attr("fill-opacity",1).attr("stroke-opacity",1);			
+
+	
+	
+}
+
+//wooo!, from https://groups.google.com/forum/?fromgroups#!topic/d3-js/ndyvibO7wDA
+function pointsBetween(circle1,circle2,standOff1,standOff2){
+  var x1=circle1.x, y1=circle1.y,
+      x2=circle2.x, y2=circle2.y,
+      dx=x2-x1,                    dy=y2-y1,
+      r1=returnNodeSize(circle1) + (standOff1||0),
+      r2=returnNodeSize(circle2) + (standOff2||0);
+  if ( (r1+r2)*(r1+r2) >= dx*dx+dy*dy ) return [[0,0],[0,0]];
+  var a=Math.atan2(dy,dx), c=Math.cos(a), s=Math.sin(a);
+  return [
+    [x1+c*r1,y1+s*r1],
+    [x2-c*r2,y2-s*r2]
+  ];
+}
+
+function hideSpinner(){	
+	$("#spinner").css("display","none");	
+}
+
+
+function dataAnalysisGender(){
+
+	//we need to know some stats about the people before we start to render the network
+	//find out the largest nodes
+	var totalConnectionsGender = 0;
+	for (x in tripleObject){	//each x here is a person
+		
+		var sizeGender = 0;
+		for (y in tripleObject[x]){		//this level is the types of relations, mentions, knows, etc. each y here is a realtion bundle
+			sizeGender = sizeGender + tripleObject[x][y].length;
+		}		
+		
+		var sizeObjGender = {}; 
+		sizeObjGender.node = x;			
+		sizeObjGender.size = sizeGender/2;		
+		sizeObjGender.random = Math.floor((Math.random()*100)+1);			
+		largestNodesGender.push(sizeObjGender);
+		totalConnectionsGender = totalConnectionsGender + sizeGender;
+	}
+	
+	
+	 
+	//now an array of objects of with the .node property being the index to the tripleObect
+	largestNodesGender.sort(function(a,b) {
+		return b.size - a.size;
+	});	
+	
+	
+	//find out the range of number of connections to color our edges
+	edgesAvgGender = Math.floor(totalConnectionsGender/largestNodesGender.length);
+	edgesIntervalGender = (largestNodesGender[0].size - edgesAvgGender) / 3;
+	console.log(edgesIntervalGender);
+	
+	
+	var flipFlop = 0;
+	for (var i = largestNodesGender.length - 1; i >= 0; i--) {		
+		largestNodesGender[i].flipFlop =  (flipFlop % 2 == 1) ?  (flipFlop*-1) : (flipFlop);	
+		flipFlop++;
+	}		 
+	largestNodesGender.splice(interviewedPeople.length,largestNodesGender.length-interviewedPeople.length); 
+	largestNodesGender.sort(function(a,b) {
+		return b.flipFlop - a.flipFlop;
+	});			
+	
+	
+
+	
+	//we want to pin some of the larger nodes to the outside in order to keep things readable, so figure our where to put them and store it in this obj array
+	z=0;	
+	for (n in largestNodesGender){
+
+			var nudge = 0;
+			var a = (186 / (largestNodesGender.length/2)) * n;				
+			if (n==0 ){nudge = 16;}
+			if (n==1){nudge = -16;}
+			if (n==(largestNodesGender.length/2)){nudge = 16;}
+			if (n==(largestNodesGender.length/2+1)){nudge = -16;}
+
+
+			if (n < (largestNodesGender.length/2 )){	
+				var r = visHeight/2.4;
+				largestNodesGender[n].x = (visWidth/2) + (r+visWidth/6) * Math.cos(a);
+	
+				largestNodesGender[n].y = (visHeight/2) + nudge + r * Math.sin(a);
+			}
+
+			else{
+				if (z%2==0){		
+					var r = visHeight/3.8;
+					largestNodesGender[n].x = (visWidth/2) + (r+visWidth/6) * Math.cos(a);
+					largestNodesGender[n].y = (visHeight/2) + nudge + r * Math.sin(a);
+				}
+				else{
+					var r = visHeight/3.6;
+					largestNodesGender[n].x = (visWidth/2) + (r+visWidth/8) * Math.cos(a);
+					largestNodesGender[n].y = (visHeight/2) + nudge + r * Math.sin(a);
+				}			
+			}
+			z++;			
+				
+	}
+	
+	
+
+	
+	  
+}
+
+//build the intial list used for dynamic mode
+function buildDynamicList(){
+	 
+
+	var listNodes = baseNodes;
+	listNodes.sort(function(a,b) {
+		 var nameA=a.labelLast.toLowerCase(), nameB=b.labelLast.toLowerCase()
+		 if (nameA < nameB) //sort string ascending
+		  return -1 
+		 if (nameA > nameB)
+		  return 1
+		 return 0 //default return value (no sorting)
+	});
+
+	var domFragment = $("<div>");
+	
+	for (x in listNodes){
+	
+		var id_css = listNodes[x].id.split("/")[listNodes[x].id.split("/").length-1].replace(cssSafe,'');		
+		var id_img = $.trim(decodeURI(listNodes[x].id).split("\/")[decodeURI(listNodes[x].id).split("\/").length-1]);
+	 
+		var descText = '';	
+		// if (descObject.hasOwnProperty(listNodes[x].id)){
+		// 	var desc = descObject[listNodes[x].id]['http://www.w3.org/2000/01/rdf-schema#comment'][0].value;
+		// 	var r = /\\u([\d\w]{4})/gi;
+		// 	desc = desc.replace(r, function (match, grp) {
+		// 		return String.fromCharCode(parseInt(grp, 16)); } );
+		// 	desc = unescape(desc); 
+		// 	descText = decodeURIComponent(desc);
+		// 	descText = descText.replace(/&ndash;/gi,'-');
+		// 	descText = descText.replace(/&amp;/gi,'&');		
+			
+			
+		// }	 
+
+		if (descObject[listNodes[x].id]){
+			if (descObject[listNodes[x].id]['http://dbpedia.org/ontology/abstract']){
+				var desc = descObject[listNodes[x].id]['http://dbpedia.org/ontology/abstract'][0].value;
+				var r = /\\u([\d\w]{4})/gi;
+				desc = desc.replace(r, function (match, grp) {
+					return String.fromCharCode(parseInt(grp, 16)); } );
+				desc = unescape(desc); 
+				descText = decodeURIComponent(desc);
+				descText = descText.replace(/&ndash;/gi,'-');
+				descText = descText.replace(/&amp;/gi,'&');	
+
+				var link = listNodes[x].id.replace('dbpedia','wikipedia').replace('resource','wiki');
+
+				descText = descText.substring(0,250) + '...' + '<br>' + '<a class="popup-link" target="_blank" href="' + link + '">From Wikipedia</a><br><br>';	
+				
+
+			}else{
+				descText = "";
+			}
+		}
+
+ 
+		
+		domFragment.append
+		(
+			$("<div>")
+				.attr("id","dynamic_" + id_css)
+				.addClass("dynamicListItem")
+				.data("label",listNodes[x].labelLast)
+				.data("id",listNodes[x].id)
+				.click(function(){ if (dynamicPeople.indexOf($(this).data("id"))==-1){$("#dynamicClear").fadeIn(5000); $("#dynamicHelp").css("display","none"); usePerson = $(this).data("id"); dynamicPeople.push(usePerson); filter();}})
+				.append
+				(
+					$("<img>")
+						.attr("src",function()
+						{
+							 
+ 							if (fileNames.indexOf(id_img+'.png')!=-1){
+								return "/image/round/" + id_img+'.png';
+							}else{
+								return "";	
+							}
+						})
+						.css("visibility",function()
+						{
+							if (fileNames.indexOf(id_img+'.png')!=-1){
+								return "visible"	
+							}else{
+								return "hidden"								
+							}
+						})
+				
+				)
+				.append
+				(
+					$("<div>")
+						.text(listNodes[x].labelLast)
+						.attr("title", descText)					
+					
+				)				
+		
+		)
+	}
+
+	$("#dynamicListHolder").html(domFragment);
+
+	window.orginalDynamicListFragment = domFragment;
+	
+	
 }
 
 
@@ -2012,230 +2576,10 @@ function highlightText(text, uris){
 
 }
 
-function changeVisMode(changeTo){
-
-	if (rendering)
-		return false;
-
-	rendering = true;
-
-
-	if (changeTo == "person"){
-		History.pushState({state:idLookup[usePerson]}, "Person Mode", "?person=" + idLookup[usePerson]);
-		
-	}else{
-		History.pushState({state:changeTo}, changeTo +" Mode", "?mode=" + changeTo);
-
-	}
-
-	//set the gephi download link
-	if (changeTo == 'person'){
-	
-		$("#gephi").show();
-		$("#gephi").attr("href", 'http://linkedjazz.org/api/relationships/ego/%3C' + encodeURIComponent(usePerson) + '%3E/gexf');
-	
-	}else if (changeTo != 'dynamic'){
-		
-		$("#gephi").show();
-		$("#gephi").attr("href", 'http://linkedjazz.org/api/relationships/all/gexf');
-
-	}else{
-		$("#gephi").hide();
-	}
-
-
-	visMode = changeTo;
-
-	$("#network").fadeOut(function(){
-		
-		$("#network").css("visibility","hidden");
-		
-		//if the popup has been shown make sure its hidden before the next view
-		if(currentNode!=null){hidePopup();}
-
-
-		
-		showSpinner("Rendering<br>Network");		
-		initalizeNetwork();		
-
-
-		//we need to rest the zoom/pan
-   		zoom.translate([0,0]).scale(1);
-		vis.attr("transform", "translate(" + [0,0] + ")"  + " scale(" + 1 + ")");  		
-		
-		zoomWidgetObjDoZoom = false;	
-		zoomWidgetObj.setValue(0,0.255555555); 		
-		
-		filter();
-
-		rendering = false;
-		
-		
-		
-		
-	});
-	
-	
-		
-	
-	
-}
-
-
-//build the intial list used for dynamic mode
-function buildDynamicList(){
-	 
-
-	var listNodes = baseNodes;
-	listNodes.sort(function(a,b) {
-		 var nameA=a.labelLast.toLowerCase(), nameB=b.labelLast.toLowerCase()
-		 if (nameA < nameB) //sort string ascending
-		  return -1 
-		 if (nameA > nameB)
-		  return 1
-		 return 0 //default return value (no sorting)
-	});
-
-	var domFragment = $("<div>");
-	
-	for (x in listNodes){
-	
-		var id_css = listNodes[x].id.split("/")[listNodes[x].id.split("/").length-1].replace(cssSafe,'');		
-		var id_img = $.trim(decodeURI(listNodes[x].id).split("\/")[decodeURI(listNodes[x].id).split("\/").length-1]);
-	 
-		var descText = '';	
-		// if (descObject.hasOwnProperty(listNodes[x].id)){
-		// 	var desc = descObject[listNodes[x].id]['http://www.w3.org/2000/01/rdf-schema#comment'][0].value;
-		// 	var r = /\\u([\d\w]{4})/gi;
-		// 	desc = desc.replace(r, function (match, grp) {
-		// 		return String.fromCharCode(parseInt(grp, 16)); } );
-		// 	desc = unescape(desc); 
-		// 	descText = decodeURIComponent(desc);
-		// 	descText = descText.replace(/&ndash;/gi,'-');
-		// 	descText = descText.replace(/&amp;/gi,'&');		
-			
-			
-		// }	 
-
-		if (descObject[listNodes[x].id]){
-			if (descObject[listNodes[x].id]['http://dbpedia.org/ontology/abstract']){
-				var desc = descObject[listNodes[x].id]['http://dbpedia.org/ontology/abstract'][0].value;
-				var r = /\\u([\d\w]{4})/gi;
-				desc = desc.replace(r, function (match, grp) {
-					return String.fromCharCode(parseInt(grp, 16)); } );
-				desc = unescape(desc); 
-				descText = decodeURIComponent(desc);
-				descText = descText.replace(/&ndash;/gi,'-');
-				descText = descText.replace(/&amp;/gi,'&');	
-
-				var link = listNodes[x].id.replace('dbpedia','wikipedia').replace('resource','wiki');
-
-				descText = descText.substring(0,250) + '...' + '<br>' + '<a class="popup-link" target="_blank" href="' + link + '">From Wikipedia</a><br><br>';	
-				
-
-			}else{
-				descText = "";
-			}
-		}
-
- 
-		
-		domFragment.append
-		(
-			$("<div>")
-				.attr("id","dynamic_" + id_css)
-				.addClass("dynamicListItem")
-				.data("label",listNodes[x].labelLast)
-				.data("id",listNodes[x].id)
-				.click(function(){ if (dynamicPeople.indexOf($(this).data("id"))==-1){$("#dynamicClear").fadeIn(5000); $("#dynamicHelp").css("display","none"); usePerson = $(this).data("id"); dynamicPeople.push(usePerson); filter();}})
-				.append
-				(
-					$("<img>")
-						.attr("src",function()
-						{
-							 
- 							if (fileNames.indexOf(id_img+'.png')!=-1){
-								return "/image/round/" + id_img+'.png';
-							}else{
-								return "";	
-							}
-						})
-						.css("visibility",function()
-						{
-							if (fileNames.indexOf(id_img+'.png')!=-1){
-								return "visible"	
-							}else{
-								return "hidden"								
-							}
-						})
-				
-				)
-				.append
-				(
-					$("<div>")
-						.text(listNodes[x].labelLast)
-						.attr("title", descText)					
-					
-				)				
-		
-		)
-	}
-
-	$("#dynamicListHolder").html(domFragment);
-
-	window.orginalDynamicListFragment = domFragment;
-	
-	
-}
-
-
-
-function dynamicFilterList(){
-	
-
-	
-	var searchTerm = $("#dynamicSearchInput").val().toLowerCase();
-
-	$(".dynamicListItem").each(function(){
-		
-		if ($(this).data("label").toLowerCase().indexOf(searchTerm)==-1){
-			$(this).css("display","none");
-		}else{
-			$(this).css("display","block");
-		}
-		
-	});
-
-	
-		
-}
-
-
-//zoom/pan function called by mouse event
-function redraw(useScale) {
-
-	//store the last event data
-	trans=d3.event.translate;
-	scale=d3.event.scale;  
-
-
-	//transform the vis
-   vis.attr("transform",
-      "translate(" + trans + ")"
-      + " scale(" + scale + ")");   
-	
-	//we need to update the zoom slider, set the boolean to false so the slider change does not trigger a zoom change in the vis (from the slider callback function)  
-	zoomWidgetObjDoZoom = false;	
-	zoomWidgetObj.setValue(0,(scale/4)); 
-	 
-}
-
- 
-
-function loadYouTube(useId){
+function loadYouTube(useId,name){
 
 	var filename = useId + '.meta';
-	$.get('img/' + filename, function(data) {
+	$.get('../image/round/' + filename, function(data) {
 
 		var objectCode = youTubeObject.replace(/\<id\>/ig,data);
 		
@@ -2257,132 +2601,85 @@ function loadYouTube(useId){
 		$("#video").append(objectCode);
 		
 
+	}).fail(function(){
+
+		filename = name.replace(' ','_') +'.meta'		
+        	$.get('../image/round/' + filename, function(data) {
+
+        	        var objectCode = youTubeObject.replace(/\<id\>/ig,data);
+
+
+                	$("#video").empty();
+                	$("#video").append(
+                        	$("<a>")
+                                	.text("[x] Close")
+                     	           .attr("href","#")
+                        	        .attr("id", "youTubeClose")
+                                	.attr("title","Close Video")
+                                	.click(function(event){
+                                        	$("#video").empty();
+                                        	event.stopPropagation();
+                                        	event.preventDefault();
+                                	})
+
+                	);
+                	$("#video").append(objectCode);
+
+
+        })		
+
+
+
 	});	
 	//youTubeObject
 	
 	
 }
 
-
-
-function edgeStrokeWidth(d){
+function dynamicFilterList(){
+	
 
 	
-	if (visMode=="person" || visMode=="dynamic"){
+	var searchTerm = $("#dynamicSearchInput").val().toLowerCase();
+
+	$(".dynamicListItem").each(function(){
 		
-	 	
-		if (nodes.length < 10){
-			return 2;	
+		if ($(this).data("label").toLowerCase().indexOf(searchTerm)==-1){
+			$(this).css("display","none");
+		}else{
+			$(this).css("display","block");
 		}
+		
+	});
 
-		if (nodes.length < 30){
-			return 1;	
-		}		
-		if (nodes.length < 40){
-			return 0.5;	
-		}		
+	
+		
+}
+
+function returnNodeStrokeColor(d){
+
+	if (visMode == "person" || visMode == "dynamic"){
+			
+			if (dynamicPeople.indexOf(d.id) != -1 || usePerson == d.id){
 				
-		return .3;		
-	}	
-	
-	 
-	
-	
-	
-	return 0.3;	
-	
-}
+				return "#FC0";				
+			}
+			
+			
+	}
+	if (visMode == "person_gender" || visMode == "gender" ){
+		if (d.gender == 'female'){
+		return "#bd6565";
+		}
+		if (d.gender == 'male'){
 
-
-function edgeColor(d){
-	
-	if (visMode=='dynamic'){return "#666";}
-	
-	if (typeof d.connections == 'undefined'){
-		d = d.source;
+			return "#638cd2";
+		}	
+		if (d.gender == 'unknown'){
+			return "#CCC";
+		}
 	}
 	
- 	
-	if (d.connections <= edgesAvg){		
-		return "#bcbddc";	
-	}
-	if ((d.connections-edgesAvg)/edgesInterval <= 1.5){				
-		return "#9ecae1";	
-	}	
-	if ((d.connections-edgesAvg)/edgesInterval <= 2.5){				
-		return "#74c476";	
-	}	
-	return "#fdae6b";	
-	
+	return "#666"
+		
 }
-
-function linkStrength(d){
-	
-	if (visMode=="free"){
-		//return Math.sqrt(d.source.connections)/15;		
-		//return 0;
-		return (d.source.connections / largestConnection) / 500;
-	}	
-	
-	if (visMode=="wave"){
-		return Math.sqrt(d.source.connections)/9;		
-	}
-	if (visMode=="person"){
-		return 0.2;		
-	}	
-	
-	if (visMode=="dynamic"){
-		return 0.01;		
-	}		
-	
-	if (visMode=="clique"){
-		//return Math.sqrt(d.source.connections)/8;		
-		
-		//we want to find the combined simlarity between the two people
-		var p1 = d.source.id;
-		var p2 = d.target.id;		
-		
-		var strength = 0;
-		 
-		
-		if (simlarityIndex[p1].hasOwnProperty(p2)){strength=simlarityIndex[p1][p2];}
-		if (simlarityIndex[p2].hasOwnProperty(p1)){strength=strength+simlarityIndex[p2][p1];}		
-		
-		
-		return (strength / (largestSimilarity*2));
-		
-	}	
-	
-}
-function showSpinner(text){
-	
-	$("#spinner").css("left",($("#network").width()/2 ) - 65 + "px");
-	$("#spinner").css("top", ($("#network").height()/2 ) - 65 + "px");
-	$("#spinner").css("display","block");
-	$("#spinner span").html(text);
-		
-	
-}
-
-function hideSpinner(){	
-	$("#spinner").css("display","none");	
-}
-
-function windowResize(){
-	 
-	visWidth = $(window).width();
-	visHeight = $(window).height();
-	
- 	
-	$("#network").css('width', visWidth + 'px');
-	$("#network").css('height',visHeight + 'px');
-	$("#dynamicListHolder").css('height',visHeight - 110 + 'px');
-	
-	
-	
-
-	
-	
-}
-
-
