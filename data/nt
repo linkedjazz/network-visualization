@@ -450,7 +450,7 @@
 <http://linkedjazz.org/resource/Billy_Krechmer> <http://xmlns.com/foaf/0.1/name> "Billy Krechmer"@en .
 <http://linkedjazz.org/resource/Billy_Krechmer> <http://dbpedia.org/ontology/thumbnail> <http://linkedjazz.org/image/square/Billy_Krechmer.png> .
 <http://dbpedia.org/resource/Mel_Torm%C3%A9> <http://xmlns.com/foaf/0.1/name> "Mel Torme"@en .
-<http://dbpedia.org/resource/Mel_Torm%C3%A9> <http://dbpedia.org/ontology/thumbnail> <http://linkedjazz.org/image/square/Mel_TormÃ©.png> .
+<http://dbpedia.org/resource/Mel_Torm%C3%A9> <http://dbpedia.org/ontology/thumbnail> <http://linkedjazz.org/image/square/Mel_TormÃƒÂ©.png> .
 <http://dbpedia.org/resource/Buddy_Arnold> <http://xmlns.com/foaf/0.1/name> "Buddy Arnold"@en .
 <http://dbpedia.org/resource/Buddy_Arnold> <http://dbpedia.org/ontology/thumbnail> <http://linkedjazz.org/image/square/Buddy_Arnold.png> .
 <http://linkedjazz.org/resource/Lance_Boyd> <http://xmlns.com/foaf/0.1/name> "Lance Boyd"@en .
@@ -731,7 +731,7 @@
 <http://dbpedia.org/resource/Hannibal_Peterson> <http://xmlns.com/foaf/0.1/name> "Hannibal Peterson"@en .
 <http://dbpedia.org/resource/Hannibal_Peterson> <http://dbpedia.org/ontology/thumbnail> <http://linkedjazz.org/image/square/Hannibal_Peterson.png> .
 <http://dbpedia.org/resource/Miroslav_Vitou%C5%A1> <http://xmlns.com/foaf/0.1/name> "Miroslav Vitous"@en .
-<http://dbpedia.org/resource/Miroslav_Vitou%C5%A1> <http://dbpedia.org/ontology/thumbnail> <http://linkedjazz.org/image/square/Miroslav_VitouÅ¡.png> .
+<http://dbpedia.org/resource/Miroslav_Vitou%C5%A1> <http://dbpedia.org/ontology/thumbnail> <http://linkedjazz.org/image/square/Miroslav_VitouÃ…Â¡.png> .
 <http://dbpedia.org/resource/Bobby_Watson> <http://xmlns.com/foaf/0.1/name> "Bobby Watson"@en .
 <http://dbpedia.org/resource/Bobby_Watson> <http://dbpedia.org/ontology/thumbnail> <http://linkedjazz.org/image/square/Bobby_Watson.png> .
 <http://dbpedia.org/resource/Erskine_Hawkins> <http://xmlns.com/foaf/0.1/name> "Erskine Hawkins"@en .
@@ -1618,7 +1618,7 @@
 <http://id.loc.gov/authorities/names/n83040115.html> <http://xmlns.com/foaf/0.1/name> "Jimmy Madison"@en .
 <http://dbpedia.org/resource/Michael_Moore_(bassist)> <http://xmlns.com/foaf/0.1/name> "Michael Moore"@en .
 <http://dbpedia.org/resource/B%C3%A9la_Fleck> <http://xmlns.com/foaf/0.1/name> "Bela Fleck"@en .
-<http://dbpedia.org/resource/B%C3%A9la_Fleck> <http://dbpedia.org/ontology/thumbnail> <http://linkedjazz.org/image/square/BÃ©la_Fleck.png> .
+<http://dbpedia.org/resource/B%C3%A9la_Fleck> <http://dbpedia.org/ontology/thumbnail> <http://linkedjazz.org/image/square/BÃƒÂ©la_Fleck.png> .
 <http://dbpedia.org/resource/Mel_Zelnick> <http://xmlns.com/foaf/0.1/name> "Mel Zelnick"@en .
 <http://dbpedia.org/resource/Mel_Zelnick> <http://dbpedia.org/ontology/thumbnail> <http://linkedjazz.org/image/square/Mel_Zelnick.png> .
 <http://dbpedia.org/resource/Bill_Evans_(saxophonist)> <http://xmlns.com/foaf/0.1/name> "Bill Evans"@en .
@@ -2099,7 +2099,7 @@
 <http://linkedjazz.org/resource/George_Seany_(pianist)> <http://xmlns.com/foaf/0.1/name> "George Seany"@en .
 <http://id.loc.gov/authorities/names/n91027802.html> <http://xmlns.com/foaf/0.1/name> "Josh Gibson"@en .
 <http://dbpedia.org/resource/Andr%C3%A9_Previn> <http://xmlns.com/foaf/0.1/name> "Andre Previn"@en .
-<http://dbpedia.org/resource/Andr%C3%A9_Previn> <http://dbpedia.org/ontology/thumbnail> <http://linkedjazz.org/image/square/AndrÃ©_Previn.png> .
+<http://dbpedia.org/resource/Andr%C3%A9_Previn> <http://dbpedia.org/ontology/thumbnail> <http://linkedjazz.org/image/square/AndrÃƒÂ©_Previn.png> .
 <http://dbpedia.org/resource/Ed_Thigpen> <http://xmlns.com/foaf/0.1/name> "Ed Thigpen"@en .
 <http://dbpedia.org/resource/Barney_Kessel> <http://xmlns.com/foaf/0.1/name> "Barney Kessel"@en .
 <http://linkedjazz.org/resource/Jim_Davis> <http://xmlns.com/foaf/0.1/name> "Jim Davis"@en .
@@ -2140,7 +2140,7 @@
 <http://dbpedia.org/resource/Butch_Miles> <http://dbpedia.org/ontology/thumbnail> <http://linkedjazz.org/image/square/Butch_Miles.png> .
 <http://dbpedia.org/resource/Bobby_Shew> <http://xmlns.com/foaf/0.1/name> "Bobby Shew"@en .
 <http://dbpedia.org/resource/Alex_Acu%C3%B1a> <http://xmlns.com/foaf/0.1/name> "Alex Acuna"@en .
-<http://dbpedia.org/resource/Alex_Acu%C3%B1a> <http://dbpedia.org/ontology/thumbnail> <http://linkedjazz.org/image/square/Alex_AcuÃ±a.png> .
+<http://dbpedia.org/resource/Alex_Acu%C3%B1a> <http://dbpedia.org/ontology/thumbnail> <http://linkedjazz.org/image/square/Alex_AcuÃƒÂ±a.png> .
 <http://linkedjazz.org/resource/Jose_Bettancourt_vibraphonist> <http://xmlns.com/foaf/0.1/name> "Jose Bettancourt"@en .
 <http://linkedjazz.org/resource/Jose_Bettancourt_vibraphonist> <http://www.w3.org/TR/rdf-schema#rdfs:comment> "editor"@en .
 <http://dbpedia.org/resource/Juan_Tizol> <http://xmlns.com/foaf/0.1/name> "Juan Tizol"@en .
@@ -2245,7 +2245,7 @@
 <http://linkedjazz.org/resource/Stan_Irwin_manager> <http://xmlns.com/foaf/0.1/name> "Stan Irwin"@en .
 <http://linkedjazz.org/resource/Stan_Irwin_manager> <http://www.w3.org/TR/rdf-schema#rdfs:comment> "Mentioned in several places as Pearl Bailey's manager"@en .
 <http://dbpedia.org/resource/Cachao_L%C3%B3pez> <http://xmlns.com/foaf/0.1/name> "Cachao Lopez"@en .
-<http://dbpedia.org/resource/Cachao_L%C3%B3pez> <http://dbpedia.org/ontology/thumbnail> <http://linkedjazz.org/image/square/Cachao_LÃ³pez.png> .
+<http://dbpedia.org/resource/Cachao_L%C3%B3pez> <http://dbpedia.org/ontology/thumbnail> <http://linkedjazz.org/image/square/Cachao_LÃƒÂ³pez.png> .
 <http://www.allmusic.com/artist/mert-oliver-mn0000341380> <http://xmlns.com/foaf/0.1/name> "Mert Oliver"@en .
 <http://dbpedia.org/resource/Ralph_Peterson,_Jr.> <http://xmlns.com/foaf/0.1/name> "Ralph Peterson"@en .
 <http://dbpedia.org/resource/Frank_Rosolino> <http://xmlns.com/foaf/0.1/name> "Frank Rosolino"@en .
