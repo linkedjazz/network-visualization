@@ -1872,7 +1872,6 @@
 <http://dbpedia.org/resource/James_P._Johnson> <http://xmlns.com/foaf/0.1/gender> "male"@en .
 <http://dbpedia.org/resource/Winard_Harper> <http://xmlns.com/foaf/0.1/gender> "male"@en .
 <http://id.loc.gov/authorities/names/n82066789> <http://xmlns.com/foaf/0.1/gender> "male"@en .
-<http://musicbrainz.org/artist/44ccd583-6835-47ee-b3ed-7e3e2b1515d5> <http://xmlns.com/foaf/0.1/gender> "male"@en .
 <http://dbpedia.org/resource/Kenny_Drew> <http://xmlns.com/foaf/0.1/gender> "male"@en .
 <http://dbpedia.org/resource/Ted_Rosenthal> <http://xmlns.com/foaf/0.1/gender> "male"@en .
 <http://dbpedia.org/resource/Manolito_Simonet> <http://xmlns.com/foaf/0.1/gender> "male"@en .
