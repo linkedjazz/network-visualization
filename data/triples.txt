@@ -1,4 +1,4 @@
-﻿<http://dbpedia.org/resource/Clark_Terry> <http://www.linkedjazz.org/lj/#mentioned> <http://dbpedia.org/resource/Johnny_Griffin> .
+<http://dbpedia.org/resource/Clark_Terry> <http://www.linkedjazz.org/lj/#mentioned> <http://dbpedia.org/resource/Johnny_Griffin> .
 <http://dbpedia.org/resource/Clark_Terry> <http://www.linkedjazz.org/lj/#mentioned> <http://dbpedia.org/resource/Quincy_Jones> .
 <http://dbpedia.org/resource/Clark_Terry> <http://www.linkedjazz.org/lj/#mentioned> <http://dbpedia.org/resource/Coleman_Hawkins> .
 <http://dbpedia.org/resource/Clark_Terry> <http://www.linkedjazz.org/lj/#mentioned> <http://dbpedia.org/resource/Lucky_Thompson> .
